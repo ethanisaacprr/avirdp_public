@@ -1,4 +1,4 @@
-name: SSH over ngrok
+name: Cl
 
 on: [push, workflow_dispatch]
 
@@ -8,25 +8,30 @@ jobs:
 
     steps:
     - name: Download ngrok
-      run: wget https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.zip -O ngrok.zip
-
-    - name: Extract ngrok
-      run: unzip ngrok.zip
-
-    - name: Install and start SSH server
       run: |
-        sudo apt-get update
-        sudo apt-get install -y openssh-server
-        sudo systemctl enable ssh
-        sudo systemctl start ssh
-        sudo ufw allow 22/tcp
-        sudo ufw reload
+        wget https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.zip -O ngrok.zip
+        unzip ngrok.zip
+        chmod +x ngrok
 
-    - name: Set password for user runneradmin
-      run: echo "runneradmin:P@ssw0rd!" | sudo chpasswd
+    - name: Authenticate ngrok
+      run: ./ngrok authtoken $NGROK_AUTH_TOKEN
+      env:
+        NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
 
-    - name: Auth ngrok
-      run: ./ngrok authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+    - name: Create user and set password
+      run: |
+        sudo useradd -m -s /bin/bash runneradmin
+        echo 'runneradmin:P@ssw0rd!' | sudo chpasswd
+        echo 'runneradmin ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/runneradmin
 
-    - name: Start ngrok TCP tunnel for SSH
+    - name: Configure and start SSH
+      run: |
+        sudo apt update
+        sudo apt install -y openssh-server
+        sudo sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+        sudo sed -i 's/^#\?PermitRootLogin .*/PermitRootLogin yes/' /etc/ssh/sshd_config
+        echo "AllowUsers runneradmin" | sudo tee -a /etc/ssh/sshd_config
+        sudo systemctl restart ssh
+
+    - name: Expose SSH via ngrok
       run: ./ngrok tcp 22
